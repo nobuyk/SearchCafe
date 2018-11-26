@@ -1,0 +1,366 @@
+<![CDATA[
+/** searchCafe.html
+ * 「ぐるなびWebサービス」「Google Geocoding API」を利用して
+ *  指定した住所の近くにある喫茶店を検索する
+ *
+ * @copyright	(c)studio pahoo
+ * @author		パパぱふぅ
+ * @動作環境	JavaScript ES6(ES2015) + jQuery
+ * @参考URL		http://www.pahoo.org/e-soul/webtech/js01/js01-10-01.shtm
+*/
+]]>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title></title>
+<meta name="author" content="studio pahoo" />
+<meta name="copyright" content="studio pahoo" />
+<meta name="ROBOTS" content="NOINDEX,NOFOLLOW" />
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="cache-control" content="no-cache">
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.3.1/jquery.js"></script>
+<script src="./pahooGeoCode.js"></script>
+
+<script>
+//初期設定
+$(function() {
+	//プログラム・タイトル
+	TITLE = '喫茶店検索';
+
+	//ぐるなびWebサービス アクセスキー：http://api.gnavi.co.jp/api/ で発行
+	GNAVI_ACCESSKEY = '********************************';
+
+	//GoogleMapsの表示サイズ
+	GOOGLE_MAPS_WIDTH  = 600;
+	GOOGLE_MAPS_HEIGHT = 400;
+	//GoogleマップのID
+	GMAPID             = 'gmap';
+	//初期値
+	DEF_TYPE           = 'roadmap';	//マップタイプ
+	DEF_LATITUDE       =  35.4658;		//横浜駅（緯度）
+	DEF_LONGITUDE      = 139.6223;		//　　　（経度）
+	DEF_ZOOM           = 13;			//ズーム
+	DEF_DISTANCE       = 500;			//距離
+
+	PGC = new pahooGeoCode();
+
+	//画面の初期値設定
+	var refere = 'http://www.pahoo.org/e-soul/webtech/js01/js01-10-01.shtm';
+	document.title = TITLE;
+	$('#title').html(TITLE + '  <span style="font-size:small;">' + getLastModified() + '版</span>');
+	$('#refere').html('参考サイト：<a href="' + refere +'">' + refere + '</a>');
+	init();
+});
+
+/**
+ * ファイル更新日を返す
+ * @param	なし
+ * @return	String yyyy/mm/dd
+*/
+function getLastModified() {
+	var now = new Date(document.lastModified);
+	return now.getFullYear() + '/' + (now.getMonth() + 1) + '/' + now.getDate();
+}
+
+/**
+ * 画面の初期化
+ * @param	なし
+ * @return	なし
+*/
+function init() {
+	$('#query').val('');
+	$('#type').val(DEF_TYPE);
+	$('#latitude').val(DEF_LATITUDE);
+	$('#longitude').val(DEF_LONGITUDE);
+	$('#zoom').val(DEF_ZOOM);
+	$('#distance').html(makeSelector(DEF_DISTANCE));
+}
+
+/**
+ * Googleマップ描画
+ * @param	なし
+ * @return	なし
+*/
+function drawMap() {
+	var distance = parseInt($('#distance').val());
+	var items = Array();
+
+	//喫茶店検索
+	Results = searchCafe($('#latitude').val(), $('#longitude').val(), distance, items);
+	if (Results.errmsg != '') {
+		$('#errmsg').html('エラー：' + Results.errmsg);
+	}
+
+	//Googleマップ描画
+	var zoom = distance2zoom(distance);
+	PGC.drawGMap(GMAPID, $('#latitude').val(), $('#longitude').val(), $('#type').val(), zoom, items);
+
+	//喫茶店一覧表作成
+	$('#results').html(makeTable(items));
+}
+
+/**
+ * キーワード検索
+ * @param	なし
+ * @return	なし
+*/
+function searchKeyword() {
+	//キーワード検索
+	var query = String(document.getElementById('query').value);
+	var n = PGC.searchPoint(query);
+
+	//緯度・経度を保存
+	if (n > 0) {
+		$('#latitude').val(PGC.items[0].latitude);
+		$('#longitude').val(PGC.items[0].longitude);
+	} else {
+		Results.errmsg = PGC.errmsg;
+	}
+
+	//Googleマップ描画
+	drawMap();
+}
+
+/**
+ * 検索範囲のHTMLコード作成
+ * @param	Integer distance デフォルトの検索範囲（メートル）
+ * @return	String HTMLコード
+*/
+function makeSelector(distance) {
+	var range_tbl = [0, 300, 500, 1000, 2000, 3000];
+	var html = '';
+	var range = range_tbl.length;
+
+	for (var key = 1; key < range; key++) {
+		var selected = (distance == range_tbl[key]) ? ' selected ' : '';
+		html = html + `
+<option value="${range_tbl[key]}"${selected}>${range_tbl[key]}m</option>
+`;
+	}
+
+	return html;
+}
+
+/**
+ * 検索範囲から Gooleマップのズーム値を求める
+ * @param	Integer distance 検索範囲（メートル）
+ * @return	Integer ズーム値
+*/
+function distance2zoom(distance) {
+	var zoom;
+	if      (distance <=  300)	zoom = 17;
+	else if (distance <=  500)	zoom = 16;
+	else if (distance <= 1000)	zoom = 15;
+	else if (distance <= 2000)	zoom = 14;
+	else						zoom = 13;
+
+	return zoom;
+}
+
+/**
+ * 喫茶店一覧を作成する
+ * @param	Object items[] 情報配列
+ * @return	String 一覧表（HTML）
+*/
+function makeTable(items) {
+	var n = items.length;
+	if (n <= 0)		return '';
+
+	var html = `
+<table>
+<tr class="index">
+<th>ID</th>
+<th>名称</th>
+<th>住所</th>
+</tr>
+`;
+
+	for (var i = 0; i < n; i++) {
+		html = html + `
+<tr>
+<td class="id">${items[i]['id']}</td>
+<td class="text"><a href="${items[i]['url']}" target="blank">${items[i]['title']}</a></td>
+<td class="text">${items[i]['address']}</td>
+</tr>
+`;
+	}
+	var html = html + `
+</table>
+`;
+
+	return html;
+}
+
+/**
+ * ぐるなびWebサービスのURLを取得する
+ * @param	Float  latitude  緯度（世界測地系）
+ * @param	Float  longitude 経度（世界測地系）
+ * @param	Float  distance  範囲（メートル）
+ * @param	String freeword  フリーワード検索（カンマ区切り）
+ * @return	String URL 電源情報APIのURL
+*/
+function getURL_RestSearchAPI(latitude, longitude, distance, freeword) {
+	var range_tbl = [0, 300, 500, 1000, 2000, 3000];
+
+	var keyid = GNAVI_ACCESSKEY;
+	range = range_tbl.length;
+	for (var key = 1; key < range; key++) {
+		if (distance <= range_tbl[key]) {
+			range = key;
+			break;
+		}
+	}
+	freeword = encodeURI(freeword);
+
+	url = 'https://api.gnavi.co.jp/RestSearchAPI/v3/?keyid=' + keyid + '&input_coordinates_mode=2&coordinates_mode=2&latitude=' + latitude + '&longitude=' + longitude + '&range=' + range + '&freeword=' + freeword;
+	return url;
+}
+
+/**
+ * レストラン検索APIを利用して指定座標の近くにある喫茶店を検索
+ * @param	Float  latitude  緯度（世界測地系）
+ * @param	Float  longitude 経度（世界測地系）
+ * @param	Float  distance  範囲（メートル）
+ * @param	Array  items[]   情報を格納する配列
+ * @return	Object(hit=>ヒットした施設数, errmsg=エラーメッセージ, url=>APIのURL)
+*/
+function searchCafe(latitude, longitude, distance, items) {
+	var url = getURL_RestSearchAPI(parseFloat(latitude), parseFloat(longitude), parseInt(distance), '喫茶店');
+	var n = 0;
+	var results = new Object();
+	results.hits = 0;
+	results.url = url;
+
+	//JSONデータ取得
+	var req = new XMLHttpRequest();
+	req.onreadystatechange = function() {
+	    if (req.readyState == 4 && req.status == 200) {
+			var json = JSON.parse(req.responseText);
+			var n = 1;
+			//レスポンス・チェック
+			if (json.total_hit_count > 0) {
+				json.rest.forEach(function(val) {
+					var obj = new Object();
+					obj.id        = String.fromCodePoint('A'.charCodeAt(0) + n - 1);
+					obj.title     = val.name;
+					obj.url       = val.url;
+					obj.category  = val.category;
+					obj.phone     = val.tel;
+					obj.opentime  = val.opentime.replace(/\n/ui, '<br />');
+					obj.holiday   = val.holiday.replace(/\n/ui, '<br />');
+					obj.address   = val.address.replace(/\n/ui, '<br />');
+					obj.address   = obj.address.replace(/〒[0-9\-]+ /ui, '');
+					obj.latitude  = parseFloat(val.latitude);
+					obj.longitude = parseFloat(val.longitude);
+					obj.description   = `
+<a href="${obj.url}" target="_blank">${obj.title}</a><br />電話：${obj.phone}<br />住所：${obj.address}<br />営業時間：${obj.opentime}<br />定休日：${obj.holiday}
+`;
+					items.push(obj);
+					n++;
+				});
+				results.errmsg = '';
+			} else {
+				results.errmsg = '「ぐるなびWebサービス」の呼び出しに失敗した．';
+			}
+		} else {
+			results.errmsg = '範囲内に喫茶店がない．または「ぐるなびWebサービス」が呼び出せない．';
+		}
+	};
+	req.open('GET', url, false);
+	req.send(null);
+
+	results.hits = n;
+	return results;
+}
+
+/**
+ * 住所・駅名を緯度・経度に変換
+ * @param	なし
+ * @return	なし
+*/
+function address2geo() {
+	var query = String(document.getElementById('query').value);
+	var pgc = new pahooGeoCode();
+	var n = pgc.searchPoint(query);
+}
+
+</script>
+
+<style>
+table {
+	width: 600px;
+	border-collapse: collapse;
+}
+tr, td, th {
+	border: 1px gray solid;
+	padding: 4px;
+}
+.index {
+	text-align: center;
+	background-color: gainsboro;
+}
+.id {
+	font-size: 80%;
+	text-align: center;
+}
+.number {
+	font-size: 80%;
+	text-align: right;
+}
+.text {
+	font-size: 80%;
+	text-align: left;
+}
+</style>
+</head>
+
+<body>
+<h2 id="title"></h2>
+<!-- 入力フォーム -->
+<form name="myform">
+キーワード：<input type="text" id="query" name="query" size="30" />
+<input type="button" id="exec"  name="exec"  value="キーワード検索" onClick="searchKeyword()" />&nbsp;
+<input type="button" id="map"   name="map"   value="地図検索" onClick="drawMap()" />&nbsp;
+<input type="button" id="clear" name="clear" value="リセット" onClick="init(); drawMap();" /><br />
+距　離　　：<select id="distance" name="distance" onChange="drawMap()"></selector>
+<input type="hidden" id="latitude"  name="latitude"  />
+<input type="hidden" id="longitude" name="longitude" />
+<input type="hidden" id="zoom"      name="zoom"      />
+<input type="hidden" id="type"      name="type"      />
+</form>
+
+<!-- Googleマップ，エラーメッセージ，喫茶店一覧 -->
+<div id="gmap" name="gmap" style="width:600px; height:400px"></div>
+<a href="http://api.gnavi.co.jp/api/scope/" target="_blank">
+<img src="http://api.gnavi.co.jp/api/img/credit/api_265_65.gif" width="265" height="65" border="0" alt="グルメ情報検索サイト　ぐるなび" />
+</a>
+<div id="errmsg" name="errmsg" style="color:red;"></div>
+<div style="padding-top:10px;" id="results" name="results"></div>
+
+<!-- 使い方 -->
+<div style="border-style:solid; border-width:1px; margin:20px 0px 0px 0px; padding:5px; width:600px; font-size:small; overflow-wrap:break-word; word-break:break-all;">
+<h3>使い方</h3>
+<ol>
+<li>［<span style="font-weight:bold;">キーワード</span>］に住所，ランドマーク，緯度経度のいずれかを入力してください．<br />
+緯度経度は E139.45.56.9N35.41.0.7 （東経 139度45分56.9秒、北緯 35度41分0.7秒）のように入力してください．
+</li>
+<li>［<span style="font-weight:bold;">距離</span>］ で検索範囲を選択してください．</li>
+<li>［<span style="font-weight:bold;">キーワード検索</span>］ ボタンを押してください．</li>
+<li>最寄の喫茶店を近い順に表示します．</li>
+<li>地図上を移動し，［<span style="font-weight:bold;">地図検索</span>］ ボタンを押すと、最寄の喫茶店を近い順に表示します．</li>
+<li>［<span style="font-weight:bold;">リセット</span>］ ボタンを押すと，初期化します．</li>
+</ol>
+<div id="refere"></div>
+<div id="webapi"></div>
+</div>
+
+</body>
+</html>
+
+<![CDATA[
+/*
+** バージョンアップ履歴 ===================================================
+ *
+ * @version 1.0  2018/11/17
+]]>
